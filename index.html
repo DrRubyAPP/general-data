@@ -383,7 +383,7 @@
     </div>
     <p style="font-size:12px;color:#888;margin-top:12px;line-height:1.7;">
       SIS 由 Haut.AI 从手机拍摄图像提取的皮肤特征计算：色素均匀度（pigmentation_index）、红斑密度（erythema_score）、毛孔评分（pore_density）、纹理均匀度（texture_uniformity）。权重来自皮肤科顾问判断 → 结构化转换流程（见下方），不由工程师自行决定。<br><br>
-      <strong style="color:var(--red);">⚠ 无超声设备，不存在 device_captures 表。</strong>深层皮肤生物物理数据（弹性、胶原密度）仅来自诊所访问（clinic_records），每?个月一次。Gen 1 居家数据源仅为：手机图像 → Haut.AI 特征。
+      <strong style="color:var(--red);">⚠ 无超声设备。</strong>深层皮肤生物物理数据（弹性、胶原密度）仅来自诊所访问（clinic_records），每?个月一次。Gen 1 居家数据源：① 手机图像 → Haut.AI 特征（所有层级）；② 蓝牙皮肤镜 → device_captures → Haut.AI 特征（<strong style="color:var(--red);">Paid 及以上层级</strong>）。
     </p>
   </div>
 
@@ -600,7 +600,7 @@
   <div style="background:var(--ink);border-radius:4px;padding:16px 24px;margin-bottom:32px;">
     <div style="font-size:12px;color:#DDD;line-height:1.8;">
       <strong style="color:var(--white);">工程要求：</strong>
-      ① 问卷提交 → 创建 users + study_sessions（status = pending_first_capture，start_date = NULL）+ wearable_connections（有设备则触发 OAuth + ?天历史回拉（天数待确认，各平台 API 限制不同））。<br>
+      ① 问卷提交 → 创建 users + study_sessions（status = pending_first_capture，start_date = NULL）+ wearable_connections（有设备则触发 OAuth + ?天历史回拉（天数待确认，各平台 API 限制不同））+ <strong>EvaluateMyStack 补剂勾选批量写入 intervention_log（category = supplement，face_side = both）</strong>，Brenner verdict 从 expert_sources.verdict 实时渲染。<br>
       ② 第一次采集完成 → study_sessions.start_date 回填为采集日期，status → active，Week 0 正式开始。<br>
       ③ 数据库唯一约束：每个 user_id 同时只能有一条 status = active 的 study_sessions，不可并发开两个研究。<br>
       ④ SIS 漏采规则：2次采集 → 正常计算；1次 → 降级（mcs_lowest 上限 Medium，capture_count=1）；0次 → status=skipped，不参与趋势。<br>
@@ -841,7 +841,7 @@
         <strong style="color:var(--white);">Gen 2 升级路径：</strong>Gen 1 积累的用户图像 + 诊所 Ground Truth 标注数据 → 训练 DrRuby 自有皮肤模型（替代 Haut.AI）。数据集是真正的护城河。
       </div>
       <div>
-        <strong style="color:var(--white);">唯一生物物理 Ground Truth：</strong><code style="color:#F0A0A0;">clinic_records</code> 是消费者产品中唯一的临床级测量来源（诊所弹性测量仪，每?个月一次）。居家无超声设备，不再有 device_captures 表。<br><br>
+        <strong style="color:var(--white);">唯一生物物理 Ground Truth：</strong><code style="color:#F0A0A0;">clinic_records</code> 是消费者产品中唯一的临床级测量来源（诊所弹性测量仪，每?个月一次）。居家无超声设备；device_captures 表存在，用于记录蓝牙皮肤镜采集元数据（Paid 及以上层级）。<br><br>
         <strong style="color:var(--white);">激素数据来源 — 两条路径：</strong><br>
         <strong style="color:#E8B84B;">① Mira（Gen 1 优先评估）</strong>：尿液试纸直接测 LH / E3G / FSH / PdG 定量数值，99.5% 精度，$139，FDA 注册，现货在售。2026年2月已与 Oura 建立 App 内数据集成，证明其有合作意愿。⚠ 暂无公开 API——Gen 1 方案A：用户手动将 Mira 日测数值录入 DrRuby；方案B：与 Mira 谈数据合作协议（参考 Oura 模式）。<br>
         <strong style="color:#5B8DD9;">② Clair Health（Gen 2 候选）</strong>：腕带穿戴连续监测激素生理代理信号，推断 estrogen/progesterone/LH/FSH，2026年12月发货，Stanford 临床验证中，Gen 2 评估接入。
@@ -920,6 +920,7 @@
       <div class="layer-sub">数据库 · 持久化存储</div>
       <ul>
         <li><strong>关系型数据库</strong> — 用户档案、特征向量、SIS 历史、干预记录</li>
+        <li><strong>device_captures</strong> — 皮肤镜采集元数据（设备序列号、放大倍数、蓝牙质量；无超声字段）</li>
         <li><strong>对象存储</strong> — 原始图像文件（不存入关系库）</li>
         <li><strong>混淆因素日志</strong> — 月经周期、UV 暴露、睡眠数据</li>
         <li><strong>clinic_records</strong> — 临床弹性测量仪 Ground Truth（唯一居家外生物物理测量来源），每?个月诊所上传</li>
@@ -933,6 +934,55 @@
   </div>
 
   <hr class="divider">
+
+  <!-- 订阅层级 -->
+  <div style="background:#FFF8F0;border:1.5px solid #E8C070;border-radius:4px;padding:24px 32px;margin-bottom:32px;">
+    <div style="font-size:10px;letter-spacing:0.15em;text-transform:uppercase;color:#B8860B;font-weight:700;margin-bottom:14px;">产品层级 — Subscription Tiers</div>
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <thead>
+        <tr style="border-bottom:2px solid #E8C070;">
+          <th style="text-align:left;padding:8px 12px;color:#B8860B;">层级</th>
+          <th style="text-align:left;padding:8px 12px;color:#B8860B;">会员费</th>
+          <th style="text-align:left;padding:8px 12px;color:#B8860B;">皮肤镜</th>
+          <th style="text-align:left;padding:8px 12px;color:#B8860B;">医生指导</th>
+          <th style="text-align:left;padding:8px 12px;color:#B8860B;">服务形式</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr style="border-bottom:1px solid #F0DBA0;">
+          <td style="padding:8px 12px;font-weight:600;">Free</td>
+          <td style="padding:8px 12px;">无</td>
+          <td style="padding:8px 12px;">❌ 不支持</td>
+          <td style="padding:8px 12px;">—</td>
+          <td style="padding:8px 12px;">手机拍摄 + Haut.AI 分析</td>
+        </tr>
+        <tr style="border-bottom:1px solid #F0DBA0;background:#FFFDF5;">
+          <td style="padding:8px 12px;font-weight:600;">Paid</td>
+          <td style="padding:8px 12px;">有（月/年）</td>
+          <td style="padding:8px 12px;">✅ 需购买设备</td>
+          <td style="padding:8px 12px;">基础</td>
+          <td style="padding:8px 12px;">皮肤镜采集 + 全功能分析</td>
+        </tr>
+        <tr style="border-bottom:1px solid #F0DBA0;">
+          <td style="padding:8px 12px;font-weight:600;">Premium</td>
+          <td style="padding:8px 12px;">有（月/年）</td>
+          <td style="padding:8px 12px;">✅ 需购买设备</td>
+          <td style="padding:8px 12px;">✅ 更多医生指导</td>
+          <td style="padding:8px 12px;">皮肤镜 + 强化医生沟通</td>
+        </tr>
+        <tr>
+          <td style="padding:8px 12px;font-weight:600;color:var(--red);">VIP</td>
+          <td style="padding:8px 12px;color:var(--red);">申请制 — 报价不对外展示</td>
+          <td style="padding:8px 12px;">✅</td>
+          <td style="padding:8px 12px;">✅ 一对一</td>
+          <td style="padding:8px 12px;color:var(--red);">一对一服务 + 项目服务费；用户申请后由团队发送报价及服务内容，前端不显示价格</td>
+        </tr>
+      </tbody>
+    </table>
+    <p style="font-size:12px;color:#888;margin-top:12px;">
+      <strong>工程师注意：</strong>users.subscription_tier 控制功能门控。device_captures 写入路径仅在 tier ∈ {paid, premium, vip} 时开放；doctor_guidance 功能仅在 tier ∈ {premium, vip} 时开放；VIP 报价及服务内容由后台人工发送，系统不存储金额字段，不在任何前端页面展示价格。
+    </p>
+  </div>
 
   <!-- 数据库 Schema -->
   <div style="margin-bottom:16px;">
@@ -955,7 +1005,7 @@
         <tr>
           <td>users</td>
           <td>用户档案与皮肤基线。hormonal_status 为当前值，历史变化追踪在 hormonal_status_log</td>
-          <td>user_id, skin_type, fitzpatrick_scale, hormonal_status (cycling / pregnant / perimenopausal / postmenopausal_lt5y / postmenopausal_gt5y / on_hrt / on_contraceptive), menopause_years (绝经用户填写，其余 NULL), created_at</td>
+          <td>user_id, skin_type, fitzpatrick_scale, hormonal_status (cycling / pregnant / perimenopausal / postmenopausal_lt5y / postmenopausal_gt5y / on_hrt / on_contraceptive), menopause_years (绝经用户填写，其余 NULL), subscription_tier (free / paid / premium / vip — 控制功能权限：free = 手机拍摄无皮肤镜无会员费；paid = 皮肤镜采集 + 会员费；premium = paid + 更多医生指导；vip = 一对一服务 + 项目服务费，申请制不对外展示报价), created_at</td>
           <td>注册时创建；Portal 内用户可随时更新 hormonal_status（触发写入 hormonal_status_log）</td>
         </tr>
         <tr>
@@ -991,8 +1041,14 @@
         <tr>
           <td>images</td>
           <td>原始图像引用 + 采集 metadata</td>
-          <td>image_id (PK 兼 FK → images，一张图对应一条特征记录), user_id, session_id, study_week (直接存入，避免每次查询重算日期差；公式 = floor((captured_at::date − study_sessions.start_date − total_paused_days) / 7)，与 confounder_log / feature_vectors 使用同一统一函数，禁止前端自报整数), s3_url, captured_at (含时间戳，供审计是否在规定时间窗内采集), mcs_level, lighting_score (pass/fail，采集时环境光检测结果；fail 的图像不允许提交), anatomical_site, <span class="highlight-cell">face_side (left/right)</span>, capture_device (phone_front / phone_rear — 记录拍摄镜头，供分析时控制设备差异)</td>
+          <td>image_id (PK), user_id, session_id, study_week (直接存入，避免每次查询重算日期差；公式 = floor((captured_at::date − study_sessions.start_date − total_paused_days) / 7)，与 confounder_log / feature_vectors 使用同一统一函数，禁止前端自报整数), s3_url, captured_at (含时间戳，供审计是否在规定时间窗内采集), mcs_level, lighting_score (pass/fail，采集时环境光检测结果；fail 的图像不允许提交), anatomical_site, <span class="highlight-cell">face_side (left/right)</span>, device_id (nullable FK → device_captures；手机拍摄时为 NULL，皮肤镜拍摄时填入对应 device_captures.device_id), capture_device (phone_front / phone_rear / dermoscope — 记录采集设备类型，供分析时控制设备差异；dermoscope 时 device_id 必须 NOT NULL)</td>
           <td>每周2次 × 2侧 = 4张/周（间隔 ≥ ?天，时间窗内采集（具体间隔待协议确认））</td>
+        </tr>
+        <tr>
+          <td>device_captures</td>
+          <td>皮肤镜采集元数据 — 蓝牙连接记录 + 高清图像引用（无超声字段）</td>
+          <td>device_id (PK), user_id, session_id, study_week, face_side (left/right), device_serial (皮肤镜设备序列号), s3_raw_path (原始高清图 S3 路径，与 images 表对应), derm_magnification (10x / 20x / 50x), capture_quality (good / fair / poor), bluetooth_rssi (蓝牙信号强度，供质量控制), captured_at。<strong style="color:#C8102E;">⚠ 无超声字段——elasticity / dermal_thickness 全部不存在；深层弹性数据仅来自 clinic_records（诊所仪器）。</strong></td>
+          <td>每次皮肤镜拍摄时写入（蓝牙传输完成后）；手机拍摄不写此表</td>
         </tr>
         <tr>
           <td>feature_vectors</td>
@@ -1009,8 +1065,8 @@
         <tr>
           <td>intervention_log</td>
           <td>用户产品使用周期记录（按使用regime追踪，而非逐次记录）。⚠ 不要设计成每次用就插一行 — 12周每日维A酸会产生84条相同记录，既是数据膨胀，也无法直接查询"用了几周"。</td>
-          <td>user_id, session_id, <span class="highlight-cell">face_side</span> (left/right/both), product_name, category (retinoid / moisturizer / sunscreen / serum_vitamin_c / serum_niacinamide / serum_peptide / eye_cream / exfoliant / supplement / procedure / other — 此枚举必须与 cohort_insights.intervention_category 完全一致，工程师不可自行增减值), dose, regime_start_date, regime_end_date (nullable), frequency (daily / alternate_days / weekly), notes</td>
-          <td>用户新增或停用产品时写入/更新；Loop 3 聚合时用 <code>COALESCE(regime_end_date, CURRENT_DATE)</code> 计算使用周数——regime_end_date = NULL 表示用户当前仍在使用该产品，NULL 直接参与日期运算结果为 NULL 导致整行记录被跳过；工程师必须用 COALESCE 处理，否则所有当前在用产品全部丢失于聚合。<strong>⚠ face_side=both 规则：</strong>如果同一 category 的产品同时涂抹在 intervention_side 和 control_side（如双侧都用保湿霜），该产品视为"基础护肤"，不计入 cohort_insights 干预分析，仅记录于 notes。SIS_delta 的前提是对照侧不施加差异化干预——工程师需在 cohort_insights 聚合时排除 face_side=both 的记录。</td>
+          <td>user_id, session_id, <span class="highlight-cell">face_side</span> (left/right/both), product_name, category (retinoid / moisturizer / sunscreen / serum_vitamin_c / serum_niacinamide / serum_peptide / eye_cream / exfoliant / supplement / procedure / other — 此枚举必须与 cohort_insights.intervention_category 完全一致，工程师不可自行增减值；注意：本表字段名为 category，cohort_insights 字段名为 intervention_category，含义相同，聚合时 GROUP BY intervention_log.category = cohort_insights.intervention_category, dose, regime_start_date, regime_end_date (nullable), frequency (daily / alternate_days / weekly), notes</td>
+          <td>三类写入来源：<br>① <strong>Onboarding 问卷（EvaluateMyStack 嵌入步骤）</strong>：用户注册时勾选当前在用产品/补剂，后端批量写入——补剂 face_side = both，外用品由用户指定干预侧；<br>② <strong>研究期间主动更换</strong>：用户在 App 内添加/停用产品时写入/更新；<br>③ <strong>sis_response_log 换产品行动</strong>：用户看 SIS 后点击"换产品"时，关闭上一行 regime_end_date，插入新行。<br>Loop 3 聚合时用 <code>COALESCE(regime_end_date, CURRENT_DATE)</code> 计算使用周数——regime_end_date = NULL 表示用户当前仍在使用该产品，NULL 直接参与日期运算结果为 NULL 导致整行记录被跳过；工程师必须用 COALESCE 处理，否则所有当前在用产品全部丢失于聚合。<strong>⚠ face_side=both 规则：</strong>如果同一 category 的产品同时涂抹在 intervention_side 和 control_side（如双侧都用保湿霜），该产品视为"基础护肤"，不计入 cohort_insights 干预分析，仅记录于 notes。SIS_delta 的前提是对照侧不施加差异化干预——工程师需在 cohort_insights 聚合时排除 face_side=both 的记录。</td>
         </tr>
         <tr>
           <td>confounder_log</td>
@@ -1052,7 +1108,7 @@
         <tr style="background:#F0E8FF;">
           <td>expert_sources</td>
           <td>【知识库元数据】专家知识文档注册表 — 追踪每条知识的来源、版本、授权状态；向量嵌入存向量数据库，此表存引用</td>
-          <td>source_id, expert_name (brenner / gunter / skin_specialist), content_type (paper / protocol / guideline / annotation), title, domain (hormone_skin / barrier_function / glycation / photoaging / elasticity / formulation), embedding_ref (向量数据库引用 ID), version, licensed_at, is_active (boolean)</td>
+          <td>source_id, expert_name (brenner / gunter / skin_specialist), content_type (paper / protocol / guideline / annotation), title, domain (hormone_skin / barrier_function / glycation / photoaging / elasticity / formulation), verdict (nullable — 仅 content_type = annotation 时填写，值为 keep / stop / review / caution，对应 EvaluateMyStack 四级判定；paper / guideline 类无 verdict，工程师前端渲染时取此字段实时显示 Brenner 判断), embedding_ref (向量数据库引用 ID), version, licensed_at, is_active (boolean)</td>
           <td>知识库更新时手动录入；新论文/协议发布后由 Ruby 审核后加入。<em style="color:#888;">⚠ 向量化流程：expert_sources 新增记录后，后端触发一次嵌入任务，调用 embedding API（模型待定）将 content_type 对应文本转为向量，写入向量数据库，并将返回的向量 ID 回填到 expert_sources.embedding_ref——如果 embedding_ref = NULL，说明该条知识尚未入库，RAG 检索时不可用。licensed_at = Ruby 批准可用于产品的日期（非论文发表日），is_active = false 表示已下架（如版权争议）。</em></td>
         </tr>
         <tr style="background:#F0E8FF;">
@@ -1105,6 +1161,7 @@
         <li>App 采集流程（AR 定位引导、质检、MCS 逻辑、Context 表单、face_side 标记）</li>
         <li>Wearable API 集成（Apple HealthKit / Oura / Dexcom）— OAuth 授权 + 每日定时同步</li>
         <li>图像上传 API — App → 云存储（S3）→ 触发 Haut.AI API 调用 → 写入 feature_vectors</li>
+        <li>蓝牙 5.0 皮肤镜集成 — App 蓝牙配对 + 高清图像传输 + device_captures 写入</li>
         <li>特征提取管线（AI 模型 API 集成）</li>
         <li>数据库 Schema 设计 + 增删改查</li>
         <li>SIS 计算逻辑（算法由你定义，工程师实现）</li>
@@ -1538,7 +1595,7 @@
       <div style="flex:1;text-align:center;position:relative;z-index:1;">
         <div style="width:36px;height:36px;border-radius:50%;background:var(--red);color:var(--white);font-size:11px;font-weight:700;line-height:36px;text-align:center;margin:0 auto 8px;">W0</div>
         <div style="font-size:11px;font-weight:700;color:var(--ink);">基线建立</div>
-        <div style="font-size:10px;color:var(--mid);margin-top:4px;">皮肤镜 + 居家超声基线<br>（device_captures W0）<br>Wearable 接入</div>
+        <div style="font-size:10px;color:var(--mid);margin-top:4px;">皮肤镜基线<br>（device_captures W0，Paid+）<br>Wearable 接入</div>
       </div>
       <div style="flex:1;text-align:center;position:relative;z-index:1;">
         <div style="width:36px;height:36px;border-radius:50%;background:#888;color:var(--white);font-size:11px;font-weight:700;line-height:36px;text-align:center;margin:0 auto 8px;">W?</div>
@@ -1600,6 +1657,61 @@
     <strong>数据隔离原则：</strong>研究层数据库 ≠ 消费者数据库。研究参与者可同时是消费者用户，但两份数据通过匿名化 ID 隔离，DrRuby 产品工程师无权访问研究层原始数据。研究数据的控制权归 Brenner 所在研究机构，DrRuby 提供存储基础设施。
   </div>
 
+  <!-- Brenner 一亩三分地 -->
+  <div style="border:2px solid #7B2FBE;border-radius:8px;padding:20px 24px;margin-bottom:24px;background:linear-gradient(135deg,#1A0A2E,#2A1A3A);">
+    <div style="font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:#C9A0EE;margin-bottom:8px;">Charles Brenner · Founding Science Advisor · 研究领地（一亩三分地）</div>
+    <h3 style="color:#E0C0FF;font-size:15px;margin:0 0 10px;">N=1 双盲交叉研究 · 6阶段时间轴 → 数据库映射</h3>
+    <p style="color:#CCC;font-size:12px;line-height:1.7;margin-bottom:16px;">以下时间轴来自公开报名页（DrRuby_N1_Research.html）。每阶段对应的数据库表已标注。<strong style="color:#E0C0FF;">Track 3 Schema 的所有科学参数（IRB号、干预方案、主要终点、依从率阈值）均由 Brenner 定义填入，DrRuby 工程团队不可擅自修改。</strong></p>
+    <!-- 6-phase timeline -->
+    <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:20px;">
+      <div style="background:#3A1A5A;border:1px solid #9B5FDE;border-radius:6px;padding:10px 8px;text-align:center;">
+        <div style="font-size:9px;color:#C9A0EE;letter-spacing:0.08em;text-transform:uppercase;">Phase 1</div>
+        <div style="font-size:11px;color:#E0C0FF;font-weight:600;margin:4px 0;">基线期</div>
+        <div style="font-size:9px;color:#AAA;">Wk 0–2</div>
+        <div style="font-size:9px;color:#888;margin-top:6px;line-height:1.5;">research_skin_assessments<br>research_biomarkers (W0)<br>research_confounder_log</div>
+      </div>
+      <div style="background:#2A1A3A;border:1px dashed #7B2FBE;border-radius:6px;padding:10px 8px;text-align:center;">
+        <div style="font-size:9px;color:#C9A0EE;letter-spacing:0.08em;text-transform:uppercase;">Phase 2</div>
+        <div style="font-size:11px;color:#E0C0FF;font-weight:600;margin:4px 0;">洗脱期一</div>
+        <div style="font-size:9px;color:#AAA;">Wk 2–6</div>
+        <div style="font-size:9px;color:#888;margin-top:6px;line-height:1.5;">research_compliance_log<br>research_wearable_daily<br>intervention_arm = washout</div>
+      </div>
+      <div style="background:#1A3A1A;border:1px solid #2E7B2E;border-radius:6px;padding:10px 8px;text-align:center;">
+        <div style="font-size:9px;color:#8FBF8F;letter-spacing:0.08em;text-transform:uppercase;">Phase 3</div>
+        <div style="font-size:11px;color:#B0E0B0;font-weight:600;margin:4px 0;">干预 A（盲）</div>
+        <div style="font-size:9px;color:#AAA;">Wk 6–14</div>
+        <div style="font-size:9px;color:#888;margin-top:6px;line-height:1.5;">research_interventions<br>is_blinded = true<br>每日皮肤镜扫描</div>
+      </div>
+      <div style="background:#2A1A3A;border:1px dashed #7B2FBE;border-radius:6px;padding:10px 8px;text-align:center;">
+        <div style="font-size:9px;color:#C9A0EE;letter-spacing:0.08em;text-transform:uppercase;">Phase 4</div>
+        <div style="font-size:11px;color:#E0C0FF;font-weight:600;margin:4px 0;">洗脱期二</div>
+        <div style="font-size:9px;color:#AAA;">Wk 14–16</div>
+        <div style="font-size:9px;color:#888;margin-top:6px;line-height:1.5;">research_compliance_log<br>research_wearable_daily</div>
+      </div>
+      <div style="background:#1A3A1A;border:1px solid #2E7B2E;border-radius:6px;padding:10px 8px;text-align:center;">
+        <div style="font-size:9px;color:#8FBF8F;letter-spacing:0.08em;text-transform:uppercase;">Phase 5</div>
+        <div style="font-size:11px;color:#B0E0B0;font-weight:600;margin:4px 0;">干预 B（盲）</div>
+        <div style="font-size:9px;color:#AAA;">Wk 16–24</div>
+        <div style="font-size:9px;color:#888;margin-top:6px;line-height:1.5;">research_interventions<br>arm = crossover<br>is_blinded = true</div>
+      </div>
+      <div style="background:#3A2A1A;border:1px solid #8B6B2E;border-radius:6px;padding:10px 8px;text-align:center;">
+        <div style="font-size:9px;color:#DFBE8F;letter-spacing:0.08em;text-transform:uppercase;">Phase 6</div>
+        <div style="font-size:11px;color:#FFE0A0;font-weight:600;margin:4px 0;">揭盲 + 报告</div>
+        <div style="font-size:9px;color:#AAA;">Wk 24–26</div>
+        <div style="font-size:9px;color:#888;margin-top:6px;line-height:1.5;">research_outcomes<br>unblinded_at 写入<br>N=1 个人报告</div>
+      </div>
+    </div>
+    <div style="font-size:11px;color:#AAA;line-height:1.9;border-top:1px solid #4A2A6A;padding-top:12px;">
+      <strong style="color:#C9A0EE;">数据流入口：</strong>
+      <code style="color:#E0C0FF;background:#1A0A2E;padding:1px 5px;border-radius:3px;font-size:10px;">research_applications</code>
+      （公开报名页 → 待审核）→
+      <code style="color:#E0C0FF;background:#1A0A2E;padding:1px 5px;border-radius:3px;font-size:10px;">research_participants</code>
+      （Brenner 团队审核通过后入组）→ 6阶段数据采集 →
+      <code style="color:#E0C0FF;background:#1A0A2E;padding:1px 5px;border-radius:3px;font-size:10px;">research_outcomes</code>
+      （Phase 6 揭盲汇总 + N=1 个人报告生成）
+    </div>
+  </div>
+
   <div style="margin-bottom:56px; overflow-x:auto;">
     <table>
       <thead>
@@ -1611,6 +1723,13 @@
         </tr>
       </thead>
       <tbody>
+
+        <tr>
+          <td><strong>research_applications</strong></td>
+          <td>N=1 研究报名表 — 来自公开报名页的申请人记录；审核通过后才转为 research_participants</td>
+          <td>application_id (PK), applicant_first_name, applicant_last_name, email, age, hormonal_status (perimenopausal / postmenopausal / other), health_goal (text), current_supplements (text，自报), eligibility_confirmed (boolean，5项资格确认全部勾选 = true), applied_at, review_status (pending / accepted / rejected / waitlisted), reviewed_by (nullable，审核研究员 ID), reviewed_at (nullable), rejection_reason (nullable text), participant_id (nullable FK → research_participants，审核通过并入组后回填)</td>
+          <td>与 research_participants 独立——申请人未通过筛查则永远不转为参与者。<strong style="color:#C8102E;">⚠ 隐私：email 仅在此表可见；入组后 research_participants 使用匿名 participant_id，email 不再出现在任何研究数据流中，确保 IRB 匿名化合规。</strong></td>
+        </tr>
 
         <tr style="background:#F5EDFF;">
           <td><strong>research_protocol</strong></td>
@@ -1650,7 +1769,7 @@
         <tr>
           <td><strong>research_interventions</strong></td>
           <td>研究干预方案记录 — 补剂 / 外用 / 饮食 / 生活方式，每人每阶段</td>
-          <td>intervention_id (PK), participant_id (FK), session_id (FK), intervention_type (supplement / topical / dietary / lifestyle / procedure), intervention_name (<strong>?</strong>，待协议), dose (<strong>?</strong>), frequency (<strong>?</strong>), arm (control / treatment), start_date, end_date (nullable), compliance_rate (nullable，参与者依从率，0-1), notes</td>
+          <td>intervention_id (PK), participant_id (FK), session_id (FK), intervention_type (supplement / topical / dietary / lifestyle / procedure), intervention_name (<strong>?</strong>，待协议), dose (<strong>?</strong>), frequency (<strong>?</strong>), arm (control / treatment), start_date, end_date (nullable), is_blinded (boolean，双盲设计时 = true，参与者在揭盲前不知道具体配方或 active/placebo 分配), unblinded_at (nullable timestamp，Phase 6 揭盲时写入，写入后参与者可查看完整干预方案), blind_break_reason (nullable text，非计划性揭盲原因，如严重不良事件触发安全揭盲), compliance_rate (nullable，参与者依从率，0-1，从 research_compliance_log 聚合计算), notes</td>
           <td>NAD+ 补剂是 Brenner 核心干预方向；具体干预设计完全由 Brenner 协议决定。<strong style="color:#C8102E;">⚠ 写入路径：研究员（Brenner 团队）在研究启动前通过管理后台手动录入干预方案——每位参与者每个 arm 各一条记录；协议定稿前此表为空，research_compliance_log 和 research_adverse_events 的 FK 约束依赖此表，因此录入顺序必须先于参与者入组。工程师需提供研究员后台录入界面（或批量 CSV 导入），不可依赖直接操作 DB。</strong></td>
         </tr>
 
@@ -1709,7 +1828,7 @@
       </div>
       <div>
         <strong style="color:#E0C0FF;">与消费者产品的数据共享（可选）：</strong>若参与者授权（linked_consumer_user_id 非 NULL），研究层的 research_skin_assessments 结果可作为参考写入消费者侧的 clinic_records，但仅限单向，消费者数据不回流进研究库。<br><br>
-        <strong style="color:#E0C0FF;">当前状态：</strong>Schema 已设计（8张消费者隔离表 + 4张新增修复表，共12张）。等待 Brenner 填入协议参数（IRB号、干预设计、主要终点、依从率告警阈值）。工程师可先建表结构，所有 <strong>?</strong> 字段作为 nullable 或 placeholder 处理。<br><br><strong style="color:#E0C0FF;">数据流完整性：</strong>每位参与者产生数据的完整路径：research_participants → research_sessions → research_confounder_log + research_wearable_daily + research_compliance_log + research_biomarkers + research_skin_assessments → research_outcomes。不良事件随时写入 research_adverse_events，访问行为写入 research_data_access_log。
+        <strong style="color:#E0C0FF;">当前状态：</strong>Schema 已设计（共13张表：research_applications + 8张核心研究表 + 4张新增修复表）。等待 Brenner 填入协议参数（IRB号、干预设计、主要终点、依从率告警阈值）。工程师可先建表结构，所有 <strong>?</strong> 字段作为 nullable 或 placeholder 处理。<br><br><strong style="color:#E0C0FF;">数据流完整性：</strong>完整路径：research_applications（报名）→ research_participants（入组）→ research_sessions（阶段分配）→ research_confounder_log + research_wearable_daily + research_compliance_log + research_biomarkers + research_skin_assessments（数据采集）→ research_interventions（is_blinded = true 直到 Phase 6 unblinded_at 写入）→ research_outcomes（汇总）。不良事件随时写入 research_adverse_events，访问行为写入 research_data_access_log。
       </div>
     </div>
   </div>
